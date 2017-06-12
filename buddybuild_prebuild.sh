@@ -7,7 +7,7 @@ ls -la
 
 
 echo "git get submodules"
-cd blink 
+#cd blink 
 #git clone --recursive git@github.com:blinksh/blink.git
 git submodule update --init --recursive
 
