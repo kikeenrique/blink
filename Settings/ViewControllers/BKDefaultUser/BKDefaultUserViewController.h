@@ -31,8 +31,6 @@
 
 #import <UIKit/UIKit.h>
 
-@interface SmartKeys : UIViewController
-
-@property(nonatomic, weak) id< UIKeyInput > textInputDelegate;
+@interface BKDefaultUserViewController : UITableViewController
 
 @end

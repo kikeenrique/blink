@@ -171,7 +171,7 @@ static int SshEncodeBuffer(unsigned char *pEncoding, int bufferLen, unsigned cha
 }
 
 // Generate OpenSSH public key
-- (NSString *)publicKey
+- (NSString *)publicKeyWithComment:(NSString*)comment
 {
   int nLen = 0, eLen = 0;
   int index = 0;
@@ -231,7 +231,8 @@ static int SshEncodeBuffer(unsigned char *pEncoding, int bufferLen, unsigned cha
   // Free the BIO key memory
   BIO_free(fpub);
 
-  return key;
+  NSString *commentedKey = [NSString stringWithFormat:@"%@ %@",key, comment];
+  return commentedKey;
 }
 
 - (void)dealloc
@@ -290,7 +291,7 @@ static int SshEncodeBuffer(unsigned char *pEncoding, int bufferLen, unsigned cha
     // Initialize the structure if it doesn't exist, with a default id_rsa key
     Identities = [[NSMutableArray alloc] init];
     SshRsa *defaultKey = [[SshRsa alloc] initWithLength:4096];
-    [self saveCard:@"id_rsa" privateKey:defaultKey.privateKey publicKey:defaultKey.publicKey];
+    [self saveCard:@"id_rsa" privateKey:defaultKey.privateKey publicKey:[defaultKey publicKeyWithComment:@""]];
   }
 }
 
@@ -302,7 +303,8 @@ static int SshEncodeBuffer(unsigned char *pEncoding, int bufferLen, unsigned cha
   // Save privateKey to storage
   // If the card already exists, then it is replaced
   NSString *privateKeyRef = [ID stringByAppendingString:@".pem"];
-  if (![Keychain setString:privateKey forKey:privateKeyRef]) {
+  NSError *error;
+  if (![Keychain setString:privateKey forKey:privateKeyRef error:&error]) {
     return nil;
   }
 
@@ -380,6 +382,49 @@ static int SshEncodeBuffer(unsigned char *pEncoding, int bufferLen, unsigned cha
     return YES;
   else
     return NO;
+}
+
+// UIActivityItemSource methods
+- (id)activityViewControllerPlaceholderItem:(UIActivityViewController *)activityViewController
+{
+  return _publicKey;
+}
+
+- (id)activityViewController:(UIActivityViewController *)activityViewController itemForActivityType:(UIActivityType)activityType
+{
+  if ([activityType  isEqualToString:UIActivityTypeMail] || [activityType isEqualToString:UIActivityTypeAirDrop]) {
+    // Create a file to return if sharing through Mail or AirDrop
+    NSString *tempFilename = [NSString stringWithFormat:@"%@.pub", _ID];
+    NSString *publicKeyString = _publicKey;
+    
+    NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingString:tempFilename]];
+    NSData *data = [publicKeyString dataUsingEncoding:NSUTF8StringEncoding];
+    
+    [data writeToURL:url atomically:NO];
+    
+    [activityViewController setCompletionWithItemsHandler:^(NSString *activityType, BOOL completed, NSArray *returnedItems, NSError *activityError) {
+      // Delete the file when
+      NSError *errorBlock;
+      if([[NSFileManager defaultManager] removeItemAtURL:url error:&errorBlock] == NO) {
+        NSLog(@"Error deleting temporary public key file %@",errorBlock);
+        return;
+      }
+    }];
+    
+    return url;
+  }
+  return _publicKey;
+}
+
+- (NSString *)activityViewController:(UIActivityViewController *)activityViewController
+              subjectForActivityType:(UIActivityType)activityType
+{
+  return [NSString stringWithFormat:@"Blink Public Key: %@", _ID];
+}
+
+- (NSString *)activityViewController:(UIActivityViewController *)activityViewController dataTypeIdentifierForActivityType:(UIActivityType)activityType
+{
+  return @"public.text";
 }
 
 @end

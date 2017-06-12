@@ -32,12 +32,15 @@
 #import "BKThemeCreateViewController.h"
 #import "BKSettingsFileDownloader.h"
 #import "BKTheme.h"
+#import "BKLinkActions.h"
+
 
 @interface BKThemeCreateViewController ()
 
 @property (weak, nonatomic) IBOutlet UIButton *importButton;
 @property (weak, nonatomic) IBOutlet UITextField *urlTextField;
 @property (weak, nonatomic) IBOutlet UITextField *nameTextField;
+@property (weak, nonatomic) IBOutlet UITableViewCell *galleryLinkCell;
 @property (strong, nonatomic) NSData *tempFileData;
 @property (assign, nonatomic) BOOL downloadCompleted;
 
@@ -96,16 +99,22 @@
 
 - (IBAction)importButtonClicked:(id)sender
 {
-  if (_urlTextField.text.length > 4 && [[_urlTextField.text substringFromIndex:[_urlTextField.text length] - 3] isEqualToString:@".js"]) {
+  NSString *themeUrl = _urlTextField.text;
+  if (themeUrl.length > 4 && [[themeUrl substringFromIndex:[themeUrl length] - 3] isEqualToString:@".js"]) {
+    if ([themeUrl rangeOfString:@"github.com"].location != NSNotFound && [themeUrl rangeOfString:@"/raw/"].location == NSNotFound) {
+      // Replace HTML versions of themes with the raw version
+      themeUrl = [themeUrl stringByReplacingOccurrencesOfString:@"/blob/" withString:@"/raw/"];
+    }
     [UIApplication sharedApplication].networkActivityIndicatorVisible = YES;
     self.urlTextField.enabled = NO;
     [self configureImportButtonForCancel];
-    [BKSettingsFileDownloader downloadFileAtUrl:_urlTextField.text
+    [BKSettingsFileDownloader downloadFileAtUrl:themeUrl
+			       expectedMIMETypes:@[@"application/javascript", @"text/plain"]
                           withCompletionHandler:^(NSData *fileData, NSError *error) {
                             if (error == nil) {
                               [self performSelectorOnMainThread:@selector(downloadCompletedWithFilePath:) withObject:fileData waitUntilDone:NO];
                             } else {
-                              UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Network error" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+                              UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Download error" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
                               UIAlertAction *ok = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
                               [alertController addAction:ok];
                               dispatch_async(dispatch_get_main_queue(), ^{
@@ -117,7 +126,7 @@
                             }
                           }];
   } else {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"URL error" message:@"Please enter valid .js URL" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"URL error" message:@"Themes must be .JS configuration files. Please open the gallery for more information." preferredStyle:UIAlertControllerStyleAlert];
     UIAlertAction *ok = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
     [alertController addAction:ok];
     [self presentViewController:alertController animated:YES completion:nil];
@@ -178,6 +187,15 @@
   UIAlertAction *ok = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
   [alertController addAction:ok];
   [self presentViewController:alertController animated:YES completion:nil];
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+  UITableViewCell *clickedCell = [self.tableView cellForRowAtIndexPath:indexPath];
+
+  if ([clickedCell isEqual:self.galleryLinkCell]) {
+    [BKLinkActions sendToGitHub:@"themes"];
+  } 
 }
 
 @end

@@ -30,25 +30,8 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #import <UIKit/UIKit.h>
+#import "SKButton.h"
 
-
-extern NSString *const KbdLeftArrowKey;
-extern NSString *const KbdRightArrowKey;
-extern NSString *const KbdUpArrowKey;
-extern NSString *const KbdDownArrowKey;
-extern NSString *const KbdEscKey;
-extern NSString *const KbdTabKey;
-
-typedef NS_OPTIONS(NSInteger, KbdModifiers) {
-    KbdCtrlModifier = 1 << 0,
-    KbdAltModifier
-};
-
-
-@interface SmartKeysView : UIView
-
-@property (readonly) NSUInteger modifiers;
-
--(void)show;
+@interface SKNonModifierButton : SKButton
 
 @end

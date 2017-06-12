@@ -32,12 +32,14 @@
 #import "BKFontCreateViewController.h"
 #import "BKFont.h"
 #import "BKSettingsFileDownloader.h"
+#import "BKLinkActions.h"
 
 @interface BKFontCreateViewController ()
 
 @property (weak, nonatomic) IBOutlet UIButton *importButton;
 @property (weak, nonatomic) IBOutlet UITextField *urlTextField;
 @property (weak, nonatomic) IBOutlet UITextField *nameTextField;
+@property (weak, nonatomic) IBOutlet UITableViewCell *galleryLinkCell;
 @property (strong, nonatomic) NSData *tempFileData;
 @property (assign, nonatomic) BOOL downloadCompleted;
 
@@ -97,16 +99,22 @@
 
 - (IBAction)importButtonClicked:(id)sender
 {
-  if (_urlTextField.text.length > 4 && [[_urlTextField.text substringFromIndex:[_urlTextField.text length] - 4] isEqualToString:@".css"]) {
+  NSString *fontUrl = _urlTextField.text;
+  if (fontUrl.length > 4 && [[fontUrl substringFromIndex:[fontUrl length] - 4] isEqualToString:@".css"]) {
+    if ([fontUrl rangeOfString:@"github.com"].location != NSNotFound && [fontUrl rangeOfString:@"/raw/"].location == NSNotFound) {
+      // Replace HTML versions of fonts with the raw version
+      fontUrl = [fontUrl stringByReplacingOccurrencesOfString:@"/blob/" withString:@"/raw/"];
+    }
     [UIApplication sharedApplication].networkActivityIndicatorVisible = YES;
     [self configureImportButtonForCancel];
     self.urlTextField.enabled = NO;
-    [BKSettingsFileDownloader downloadFileAtUrl:_urlTextField.text
+    [BKSettingsFileDownloader downloadFileAtUrl:fontUrl
+			      expectedMIMETypes:@[@"text/css", @"text/plain"]
                           withCompletionHandler:^(NSData *fileData, NSError *error) {
                             if (error == nil) {
                               [self performSelectorOnMainThread:@selector(downloadCompletedWithFilePath:) withObject:fileData waitUntilDone:NO];
                             } else {
-                              UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Network error" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+                              UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Download error" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
                               UIAlertAction *ok = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
                               [alertController addAction:ok];
                               dispatch_async(dispatch_get_main_queue(), ^{
@@ -118,7 +126,7 @@
                             }
                           }];
   } else {
-    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"URL error" message:@"Please enter valid .css URL" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"URL error" message:@"Fonts are assigned using valid .css files. Please open the gallery for more information." preferredStyle:UIAlertControllerStyleAlert];
     UIAlertAction *ok = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
     [alertController addAction:ok];
     [self presentViewController:alertController animated:YES completion:nil];
@@ -181,5 +189,15 @@
   [alertController addAction:ok];
   [self presentViewController:alertController animated:YES completion:nil];
 }
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+  UITableViewCell *clickedCell = [self.tableView cellForRowAtIndexPath:indexPath];
+
+  if ([clickedCell isEqual:self.galleryLinkCell]) {
+    [BKLinkActions sendToGitHub:@"fonts"];
+  } 
+}
+
 
 @end

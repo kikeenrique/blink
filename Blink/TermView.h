@@ -36,7 +36,7 @@ extern NSString * const TermViewCtrlSeq;
 extern NSString * const TermViewEscSeq;
 extern NSString * const TermViewCursorFuncSeq;
 extern NSString * const TermViewFFuncSeq;
-
+extern NSString * const TermViewAutoRepeateSeq;
 
 @protocol TerminalDelegate <NSObject>
 
@@ -48,11 +48,15 @@ extern NSString * const TermViewFFuncSeq;
 - (void)fontSizeChanged:(NSNumber *)size;
 @end
 
-@interface TerminalView : UIView
+@interface TermView : UIView
 
 @property (nonatomic) WKWebView *webView;
 @property (weak) id<TerminalDelegate> delegate;
 @property (nonatomic, readonly, weak) NSString *title;
+@property (readwrite, copy) UITextRange *selectedTextRange;
+@property (nonatomic, readonly) UITextRange *markedTextRange;
+@property (nonatomic, assign) int rowCount;
+@property (nonatomic, assign) int columnCount;
 
 - (id)initWithFrame:(CGRect)frame;
 - (void)setScrollEnabled:(BOOL)scroll;
@@ -69,5 +73,8 @@ extern NSString * const TermViewFFuncSeq;
 - (void)assignFunction:(NSString *)function toTriggers:(UIKeyModifierFlags)triggers;
 - (void)loadTerminalThemeJS:(NSString *)themeContent;
 - (void)loadTerminalFont:(NSString *)familyName fromCSS:(NSString *)cssPath;
+- (void)loadTerminalFont:(NSString *)familyName cssFontContent:(NSString *)cssContent;
+- (void)setCursorBlink:(BOOL)state;
+- (void)reset;
 
 @end

@@ -31,9 +31,10 @@
 
 #include <sys/ioctl.h>
 
-#import "SmartKeys.h"
+#import "SmartKeysController.h"
 #import "SmartKeysView.h"
 #import "TermView.h"
+#import "BKUserConfigurationManager.h"
 
 static NSDictionary *CTRLCodes = nil;
 static NSDictionary *FModifiers = nil;
@@ -45,13 +46,8 @@ NSString *const TermViewCtrlSeq = @"ctrlSeq:";
 NSString *const TermViewEscSeq = @"escSeq:";
 NSString *const TermViewCursorFuncSeq = @"cursorSeq:";
 NSString *const TermViewFFuncSeq = @"fkeySeq:";
+NSString *const TermViewAutoRepeateSeq = @"autoRepeatSeq:";
 
-typedef enum {
-  SpecialCursorKeyHome = 0,
-  SpecialCursorKeyEnd,
-  SpecialCursorKeyPgUp,
-  SpecialCursorKeyPgDown
-} SpecialCursorKeys;
 
 @interface CC : NSObject
 
@@ -87,7 +83,11 @@ typedef enum {
     UIKeyInputUpArrow : @"A",
     UIKeyInputDownArrow : @"B",
     UIKeyInputRightArrow : @"C",
-    UIKeyInputLeftArrow : @"D"
+    UIKeyInputLeftArrow : @"D",
+    SpecialCursorKeyPgUp: @"5~",
+    SpecialCursorKeyPgDown: @"6~",
+    SpecialCursorKeyHome: @"H",
+    SpecialCursorKeyEnd: @"F"
   };
 
   SS3 = [self ESC:@"O"];
@@ -128,11 +128,13 @@ typedef enum {
 + (NSString *)KEY:(NSString *)c MOD:(NSInteger)m RAW:(BOOL)raw
 {
   NSArray *out;
-
+  
+  BOOL isPageCursorKey = c == SpecialCursorKeyPgUp || c == SpecialCursorKeyPgDown;
+  
   if ([FKeys.allKeys containsObject:c]) {
     if (m) {
       out = @[ CSI, FKeys[c] ];
-    } else if (raw) {
+    } else if (raw && !isPageCursorKey) {
       return [NSString stringWithFormat:@"%@%@", SS3, FKeys[c]];
     } else {
       return [NSString stringWithFormat:@"%@%@", CSI, FKeys[c]];
@@ -149,20 +151,6 @@ typedef enum {
   }
 
   return c;
-}
-
-+ (NSString *)CURSOR:(SpecialCursorKeys)c
-{
-  switch (c) {
-    case SpecialCursorKeyHome:
-      return [NSString stringWithFormat:@"%@H", CSI];
-    case SpecialCursorKeyEnd:
-      return [NSString stringWithFormat:@"%@F", CSI];
-    case SpecialCursorKeyPgUp:
-      return [NSString stringWithFormat:@"%@5~", CSI];
-    case SpecialCursorKeyPgDown:
-      return [NSString stringWithFormat:@"%@6~", CSI];
-  }
 }
 
 + (NSString *)FKEY:(NSInteger)number
@@ -184,6 +172,8 @@ typedef enum {
       return [NSString stringWithFormat:@"%@1%ld~", CSI, number + 1];
     case 9:
     case 10:
+    case 11:
+    case 12:
       return [NSString stringWithFormat:@"%@2%ld~", CSI, number - 9];
     default:
       return nil;
@@ -191,24 +181,25 @@ typedef enum {
 }
 @end
 
-@interface TerminalView () <UIKeyInput, UIGestureRecognizerDelegate, WKScriptMessageHandler>
+@interface TermView () <UIKeyInput, UIGestureRecognizerDelegate, WKScriptMessageHandler>
 @property UITapGestureRecognizer *tapBackground;
 @property UILongPressGestureRecognizer *longPressBackground;
 @property UIPinchGestureRecognizer *pinchGesture;
 @end
 
-@implementation TerminalView {
+@implementation TermView {
   WKWebView *_webView;
   // option + e on iOS lets introduce an accented character, that we override
   BOOL _disableAccents;
   BOOL _dismissInput;
   BOOL _pasteMenu;
-  NSMutableArray *_kbdCommands;
-  SmartKeys *_smartKeys;
+  NSMutableArray<UIKeyCommand *> *_kbdCommands;
+  SmartKeysController *_smartKeys;
   UIView *cover;
   NSTimer *_pinchSamplingTimer;
   BOOL _raw;
   BOOL _inputEnabled;
+  BOOL _cmdAsModifier;
   NSMutableDictionary *_controlKeys;
   NSMutableDictionary *_functionKeys;
   NSMutableDictionary *_functionTriggerKeys;
@@ -226,11 +217,19 @@ typedef enum {
 
     [self addWebView];
     [self resetDefaultControlKeys];
-    [self addGestures];
-    [self configureNotifications];
   }
 
   return self;
+}
+
+- (void)didMoveToWindow
+{
+  [super didMoveToWindow];
+  
+  if (self.window && self.window.screen == [UIScreen mainScreen]) {
+    [self addGestures];
+    [self configureNotifications];
+  }
 }
 
 - (void)addWebView
@@ -251,24 +250,33 @@ typedef enum {
 
 - (void)addGestures
 {
+  if (!_tapBackground) {
     _tapBackground = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(activeControl:)];
     [_tapBackground setNumberOfTapsRequired:1];
     _tapBackground.delegate = self;
     [self addGestureRecognizer:_tapBackground];
+  }
 
+  if (!_longPressBackground) {
     _longPressBackground = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(longPress:)];
     _longPressBackground.delegate = self;
     [self addGestureRecognizer:_longPressBackground];
+  }
 
+  if (!_pinchGesture) {
     _pinchGesture = [[UIPinchGestureRecognizer alloc] initWithTarget:self action:@selector(handlePinch:)];
     _pinchGesture.delegate = self;
     [self addGestureRecognizer:_pinchGesture];
+  }
 }
 
 - (void)configureNotifications
 {
-  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardWillShow:) name:UIKeyboardWillShowNotification object:nil];
-  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardWillHide:) name:UIKeyboardWillHideNotification object:nil];
+  NSNotificationCenter *defaultCenter = [NSNotificationCenter defaultCenter];
+  [defaultCenter removeObserver:self];
+  
+  [defaultCenter addObserver:self selector:@selector(keyboardWillShow:) name:UIKeyboardWillShowNotification object:nil];
+  [defaultCenter addObserver:self selector:@selector(keyboardWillHide:) name:UIKeyboardWillHideNotification object:nil];
 }
 
 - (void)resetDefaultControlKeys
@@ -353,6 +361,8 @@ typedef enum {
 
   if ([operation isEqualToString:@"sigwinch"]) {
     if ([self.delegate respondsToSelector:@selector(updateTermRows:Cols:)]) {
+      self.rowCount = (int)[data[@"rows"]integerValue];
+      self.columnCount = (int)[data[@"columns"]integerValue];
       [self.delegate updateTermRows:data[@"rows"] Cols:data[@"columns"]];
     }
   } else if ([operation isEqualToString:@"terminalReady"]) {
@@ -404,7 +414,11 @@ typedef enum {
 
   // If the intersection is only the accesoryView, we have a external keyboard
   if (intersection.size.height == [iaView frame].size.height) {
-    iaView.hidden = YES;
+    if ([BKUserConfigurationManager userSettingsValueForKey:BKUserConfigShowSmartKeysWithXKeyBoard]) {
+      iaView.hidden = NO;
+    } else {
+      iaView.hidden = YES;
+    }
   } else {
     //_capsMapped = NO;
     iaView.hidden = NO;
@@ -502,11 +516,11 @@ typedef enum {
 {
   return YES;
 }
-
+  
 - (BOOL)becomeFirstResponder
 {
   if (!_smartKeys) {
-    _smartKeys = [[SmartKeys alloc] init];
+    _smartKeys = [[SmartKeysController alloc] init];
   }
 
   _smartKeys.textInputDelegate = self;
@@ -547,14 +561,26 @@ typedef enum {
   if (capsWithoutSWKeyboard && text.length == 1 && [text characterAtIndex:0] > 0x1F) {
     text = [text lowercaseString];
   }
-
-  NSUInteger modifiers = [(SmartKeysView *)[_smartKeys view] modifiers];
-  if (modifiers & KbdCtrlModifier) {
-    [_delegate write:[CC CTRL:text]];
-  } else if (modifiers & KbdAltModifier) {
-    [_delegate write:[CC ESC:text]];
+  
+  // If the key is a special key, we do not apply modifiers.
+  if (text.length > 1) {
+    // Check if we have a function key
+    NSRange range = [text rangeOfString:@"FKEY"];
+    if (range.location != NSNotFound) {
+      NSString *value = [text substringFromIndex:(range.length)];
+      [_delegate write:[CC FKEY:[value integerValue]]];
+    } else {
+      [_delegate write:[CC KEY:text MOD:0 RAW:_raw]];
+    }
   } else {
-    [_delegate write:[CC KEY:text]];
+    NSUInteger modifiers = [[_smartKeys view] modifiers];
+    if (modifiers & KbdCtrlModifier) {
+      [_delegate write:[CC CTRL:text]];
+    } else if (modifiers & KbdAltModifier) {
+      [_delegate write:[CC ESC:text]];
+    } else {
+      [_delegate write:[CC KEY:text MOD:0 RAW:_raw]];
+    }
   }
 }
 
@@ -568,11 +594,34 @@ typedef enum {
   [_webView evaluateJavaScript:[NSString stringWithFormat:@"loadFontFromCSS(\"%@\", \"%@\");", cssPath, familyName] completionHandler:nil];
 }
 
-#pragma mark External Keyboard
+- (void)loadTerminalFont:(NSString *)familyName cssFontContent:(NSString *)cssContent
+{
+  cssContent = [NSString stringWithFormat:@"data:text/css;utf-8,%@", cssContent];
 
+  NSData *jsonData = [NSJSONSerialization dataWithJSONObject:@[ cssContent ] options:0 error:nil];
+  NSString *jsString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+  NSString *jsScript = [NSString stringWithFormat:@"loadFontFromCSS(%@[0], \"%@\")", jsString, familyName];
+  
+  [_webView evaluateJavaScript:jsScript completionHandler:nil];
+}
+
+- (void)setCursorBlink:(BOOL)state
+{
+  NSString *jsScript = [NSString stringWithFormat:@"setCursorBlink(%@)", state ? @"true" : @"false"];
+  [_webView evaluateJavaScript:jsScript completionHandler:nil];
+}
+
+- (void)reset
+{
+  [_webView evaluateJavaScript:@"reset" completionHandler:nil];
+}
+
+
+#pragma mark External Keyboard
 - (void)setKbdCommands
 {
   _kbdCommands = [NSMutableArray array];
+  
   [_kbdCommands addObjectsFromArray:self.presetShortcuts];
   for (NSNumber *modifier in _controlKeys.allKeys) {
     [_kbdCommands addObjectsFromArray:_controlKeys[modifier]];
@@ -596,8 +645,16 @@ typedef enum {
       charset = @"qwertyuiopasdfghjklzxcvbnm[\\]^_ ";
     } else if (seq == TermViewEscSeq) {
       charset = @"qwertyuiopasdfghjklzxcvbnm1234567890`~-=_+[]\{}|;':\",./<>?/";
-    } else {
+    } else if (seq == TermViewAutoRepeateSeq){
+      charset = @"qwertyuiopasdfghjklzxcvbnm1234567890";
+    }
+    else {
       return;
+    }
+    
+    // Cmd is default for iOS shortcuts, so we control whether or not we are re-mapping those ourselves.
+    if (modifier == UIKeyModifierCommand) {
+      _cmdAsModifier = YES;
     }
 
     NSUInteger length = charset.length;
@@ -619,6 +676,10 @@ typedef enum {
 
     [_controlKeys setObject:cmds forKey:[NSNumber numberWithInteger:modifier]];
   } else {
+    if (modifier == UIKeyModifierCommand) {
+      _cmdAsModifier = NO;
+    }
+
     [_controlKeys setObject:@[] forKey:[NSNumber numberWithInteger:modifier]];
   }
   [self setKbdCommands];
@@ -680,14 +741,20 @@ typedef enum {
 - (NSArray *)presetShortcuts
 {
   return @[ [UIKeyCommand keyCommandWithInput:@"+"
-                                modifierFlags:UIKeyModifierCommand
-                                       action:@selector(increaseFontSize:)],
+                                modifierFlags:[BKUserConfigurationManager shortCutModifierFlags]
+                                       action:@selector(increaseFontSize:)
+             discoverabilityTitle:@"Zoom In"],
             [UIKeyCommand keyCommandWithInput:@"-"
-                                modifierFlags:UIKeyModifierCommand
-                                       action:@selector(decreaseFontSize:)],
-            [UIKeyCommand keyCommandWithInput:@"0"
-                                modifierFlags:UIKeyModifierCommand
-                                       action:@selector(resetFontSize:)] ];
+                                modifierFlags:[BKUserConfigurationManager shortCutModifierFlags]
+                                       action:@selector(decreaseFontSize:)
+             discoverabilityTitle:@"Zoom Out"],
+            [UIKeyCommand keyCommandWithInput:@"="
+                                modifierFlags:[BKUserConfigurationManager shortCutModifierFlags]
+                                       action:@selector(resetFontSize:)
+             discoverabilityTitle:@"Reset Zoom"],
+	    [UIKeyCommand keyCommandWithInput: @"v" modifierFlags: [BKUserConfigurationManager shortCutModifierFlags]
+                                          action: @selector(yank:)
+                            discoverabilityTitle: @"Paste"]];
 }
 
 - (NSArray *)functionModifierKeys
@@ -778,35 +845,37 @@ typedef enum {
 - (void)cursorSeq:(UIKeyCommand *)cmd
 {
   if (cmd.input == UIKeyInputUpArrow) {
-    [_delegate write:[CC CURSOR:SpecialCursorKeyPgUp]];
+    [_delegate write:[CC KEY:SpecialCursorKeyPgUp MOD:0 RAW:_raw]];
   }
   if (cmd.input == UIKeyInputDownArrow) {
-    [_delegate write:[CC CURSOR:SpecialCursorKeyPgDown]];
+    [_delegate write:[CC KEY:SpecialCursorKeyPgDown MOD:0 RAW:_raw]];
   }
   if (cmd.input == UIKeyInputLeftArrow) {
-    [_delegate write:[CC CURSOR:SpecialCursorKeyHome]];
+    [_delegate write:[CC KEY:SpecialCursorKeyHome MOD:0 RAW:_raw]];
   }
   if (cmd.input == UIKeyInputRightArrow) {
-    [_delegate write:[CC CURSOR:SpecialCursorKeyEnd]];
+    [_delegate write:[CC KEY:SpecialCursorKeyEnd MOD:0 RAW:_raw]];
   }
 }
 
 - (void)fkeySeq:(UIKeyCommand *)cmd
 {
-  __block NSInteger idx = -1;
-  [_specialFKeysRow enumerateSubstringsInRange:NSMakeRange(0, [_specialFKeysRow length])
-                                       options:NSStringEnumerationByComposedCharacterSequences
-                                    usingBlock:^(NSString *substring, NSRange substringRange, NSRange enclosingRange, BOOL *stop) {
-                                      if ([cmd.input isEqual:substring]) {
-                                        idx = substringRange.location;
-                                        *stop = YES;
-                                      }
-                                    }];
-
-  if (idx >= 0) {
-    [_delegate write:[CC FKEY:idx + 1]];
+  NSInteger value = [cmd.input integerValue];
+  
+  if (value == 0) {
+    [_delegate write:[CC FKEY:10]];
+  } else {
+    [_delegate write:[CC FKEY:value]];
   }
 }
+
+- (void)autoRepeatSeq:(id)sender
+{
+  UIKeyCommand *command = (UIKeyCommand*)sender;
+  [_delegate write:command.input];
+}
+
+
 
 // This are all key commands capture by UIKeyInput and triggered
 // straight to the handler. A different firstresponder than UIKeyInput could
@@ -830,7 +899,7 @@ typedef enum {
 // Cmd+v
 - (void)paste:(id)sender
 {
-  if ([sender isKindOfClass:[UIMenuController class]]) {
+  if ([sender isKindOfClass:[UIMenuController class]] || !_cmdAsModifier) {
     [self yank:sender];
   } else {
     [_delegate write:[CC CTRL:@"v"]];
@@ -866,8 +935,8 @@ typedef enum {
     }
     return NO;
   }
-  // From the keyboard we validate everything
-  return YES;
+  
+  return [super canPerformAction:action withSender:sender];
 }
 
 @end

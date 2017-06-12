@@ -30,12 +30,13 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #import "BKPubKeyDetailsViewController.h"
-
+#import "UIDevice+DeviceName.h"
+#import "BKDefaults.h"
 
 @interface BKPubKeyDetailsViewController () <UITextFieldDelegate>
 
 @property (weak, nonatomic) IBOutlet UITextField *name;
-
+@property (weak, nonatomic) IBOutlet UITextField *comments;
 @end
 
 @implementation BKPubKeyDetailsViewController
@@ -45,6 +46,7 @@
   [super viewDidLoad];
 
   _name.text = _pubkey.ID;
+  _comments.text = [NSString stringWithFormat:@"%@@%@", [BKDefaults defaultUserName] , [UIDevice getInfoTypeFromDeviceName:BKDeviceInfoTypeDeviceName]];
 }
 
 - (void)didReceiveMemoryWarning
@@ -91,6 +93,20 @@
 {
   UIPasteboard *pb = [UIPasteboard generalPasteboard];
   [pb setString:_pubkey.privateKey];
+}
+
+- (IBAction)sharePublicKey:(id)sender
+{
+  NSArray *sharingItems = @[_pubkey];
+
+  UIActivityViewController *activityController = [[UIActivityViewController alloc] initWithActivityItems:sharingItems applicationActivities:nil];
+  activityController.excludedActivityTypes = @[UIActivityTypePostToTwitter, UIActivityTypePostToFacebook,
+                                               UIActivityTypePostToWeibo, UIActivityTypeCopyToPasteboard,
+                                               UIActivityTypeAssignToContact, UIActivityTypeSaveToCameraRoll,
+                                               UIActivityTypeAddToReadingList, UIActivityTypePostToFlickr,
+                                               UIActivityTypePostToVimeo, UIActivityTypePostToTencentWeibo];
+  activityController.popoverPresentationController.barButtonItem = sender;
+  [self presentViewController:activityController animated:YES completion:nil];
 }
 
 - (void)prepareForSegue:(UIStoryboardSegue *)segue sender:(id)sender

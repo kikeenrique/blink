@@ -39,6 +39,7 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 
+#import "BKDefaults.h"
 #import "BKHosts.h"
 #import "BKPubKey.h"
 #import "SSHSession.h"
@@ -53,7 +54,8 @@
 
 static const char *usage_format =
   "usage: ssh [options] [user@]hostname [command]\r\n"
-  "[-i identity_file] [-p port] [-t request_tty] [-v verbose]\r\n"
+  "[-l login_name] [-i identity_file] [-p port]\r\n" 
+  "[-t request_tty] [-v verbose]\r\n"
   "\r\n";
 
 typedef struct {
@@ -65,6 +67,7 @@ typedef struct {
   int request_tty;
   const char *identity_file;
   const char *password;
+  BOOL disableHostKeyCheck;
 } Options;
 
 
@@ -168,7 +171,7 @@ static void kbd_callback(const char *name, int name_len,
   optind = 1;
 
   while (1) {
-    int c = getopt_long(argc, argv, "p:i:tv", NULL, NULL);
+    int c = getopt_long(argc, argv, "p:i:htvl:", NULL, NULL);
     if (c == -1) {
       break;
     }
@@ -180,6 +183,9 @@ static void kbd_callback(const char *name, int name_len,
 	  return [self dieMsg:@"Wrong port value provided."];
 	}
 	break;
+      case 'h':
+        _options.disableHostKeyCheck = true;
+        break;
       case 'v':
 	_debug = 1;
 	break;
@@ -188,6 +194,9 @@ static void kbd_callback(const char *name, int name_len,
 	break;
       case 't':
 	_options.request_tty = REQUEST_TTY_FORCE;
+	break;
+      case 'l':
+	_options.user = optarg;
 	break;
       default:
 	optind = 0;
@@ -214,7 +223,8 @@ static void kbd_callback(const char *name, int name_len,
   [self processHostSettings];
 
   if (!_options.user) {
-    return [self dieMsg:@"Missing user to establish connection."];
+    // If no user provided, use the default
+    _options.user = [[BKDefaults defaultUserName] UTF8String];
   }
 
   NSMutableArray *command_args = [[NSMutableArray alloc] init];
@@ -296,7 +306,9 @@ static void kbd_callback(const char *name, int name_len,
 
   _options.hostname = host.hostName ? [host.hostName UTF8String] : _options.hostname;
   _options.port = _options.port ? _options.port : [host.port intValue];
-  _options.user = _options.user ? _options.user : [host.user UTF8String];
+  if (!_options.user && [host.user length]) {
+    _options.user = [host.user UTF8String];
+  }
   _options.identity_file = _options.identity_file ? _options.identity_file : [host.key UTF8String];
   _options.password = host.password ? [host.password UTF8String] : NULL;
 }
@@ -348,7 +360,7 @@ static void kbd_callback(const char *name, int name_len,
   char ntop[NI_MAXHOST], strport[NI_MAXSERV];
 
   for (ai = aitop; ai; ai = ai->ai_next) {
-    if (ai->ai_family != AF_INET) {
+    if (ai->ai_family != AF_INET && ai->ai_family != AF_INET6) {
       continue;
     }
 
@@ -396,8 +408,12 @@ static void kbd_callback(const char *name, int name_len,
     return;
   }
 
-  if (![self verify_host:ntop]) {
-    *error = [NSError errorWithDomain:@"blk.ssh.libssh2" code:-1 userInfo:@{ NSLocalizedDescriptionKey : @"Host key verification failed." }];
+  if (!_options.disableHostKeyCheck) {
+    if (![self verify_host:ntop]) {
+      *error = [NSError errorWithDomain:@"blk.ssh.libssh2" code:-1 userInfo:@{ NSLocalizedDescriptionKey : @"Host key verification failed." }];
+    }
+  } else {
+    [self errMsg:@"@@@@@@ WARNING @@@@@@@@ --- Host Key check disabled."];
   }
 
   return;
@@ -706,6 +722,11 @@ static void kbd_callback(const char *name, int name_len,
   [self debugMsg:@"ssh_session_start: channel created"];
 
   if (_tty_flag) {
+    // [self debugMsg:[NSString stringWithFormat:@"Sending env LC_CTYPE = UTF-8"]];    
+    // while ((rc = libssh2_channel_setenv(_channel, "LC_CTYPE", "UTF-8")) == LIBSSH2_ERROR_EAGAIN) {
+    //   waitsocket(_sock, _session);
+    // }
+
     while ((rc = libssh2_channel_request_pty(_channel, TERM)) == LIBSSH2_ERROR_EAGAIN) {
       waitsocket(_sock, _session);
     }
@@ -756,7 +777,6 @@ static void kbd_callback(const char *name, int name_len,
   size_t key_len;
   int key_type;
   char *type_str;
-  char shabuf[42];
 
   if (!(kh = libssh2_knownhost_init(_session))) {
     return -1;
@@ -772,11 +792,14 @@ static void kbd_callback(const char *name, int name_len,
   int kh_key_type = (key_type == LIBSSH2_HOSTKEY_TYPE_RSA) ? LIBSSH2_KNOWNHOST_KEY_SSHRSA : LIBSSH2_KNOWNHOST_KEY_SSHDSS;
   type_str = (key_type == LIBSSH2_HOSTKEY_TYPE_RSA) ? "RSA" : "DSS";
 
-  const char *fingerprint = libssh2_hostkey_hash(_session, LIBSSH2_HOSTKEY_HASH_SHA1);
-  for (int i = 0; i < 20; i++) {
-    snprintf(&shabuf[i * 2], 3, "%02x", (unsigned char)fingerprint[i]);
-  }
+  const char *hk_hash = libssh2_hostkey_hash(_session, LIBSSH2_HOSTKEY_HASH_SHA1);
 
+  NSData *data = [NSData dataWithBytes:hk_hash length:20];
+  
+  NSString *fingerprint = [data base64EncodedStringWithOptions:0];
+
+  [self debugMsg:[NSString stringWithFormat:@"Server host key: %s %@ ", type_str, fingerprint]];
+  
   int succ = 0;
   if (key) {
     struct libssh2_knownhost *knownHost;
@@ -787,17 +810,17 @@ static void kbd_callback(const char *name, int name_len,
       [self errMsg:@"Known host check failed"];
     } else if (check == LIBSSH2_KNOWNHOST_CHECK_NOTFOUND) {
       [self errMsg:[NSString stringWithFormat:@"The authenticity of host %.200s (%s) can't be established.\r\n"
-					       "%s key fingerprint is %s",
+					       "%s key fingerprint is %@",
 					      _options.hostname, addr,
-					      type_str, shabuf]];
+					      type_str, fingerprint]];
 
     } else if (check == LIBSSH2_KNOWNHOST_CHECK_MISMATCH) {
       [self errMsg:[NSString stringWithFormat:@"@@@@@@ REMOTE HOST IDENTIFICATION HAS CHANGED @@@@@@\r\n"
 					       "%s host key for %.200s (%s) has changed.\r\n"
 					       "This might be due to someone doing something nasty or just a change in the host.\r\n"
-					       "Current %s key fingerprint is %s",
+					       "Current %s key fingerprint is %@",
 					      type_str, _options.hostname, addr,
-					      type_str, shabuf]];
+					      type_str, fingerprint]];
     } else if (check == LIBSSH2_KNOWNHOST_CHECK_MATCH) {
       succ = 1;
     }
@@ -854,7 +877,7 @@ static void kbd_callback(const char *name, int name_len,
       char c;
       ssize_t n;
 
-      if ((n = read(fileno(_stream.in), &c, 1)) <= 0) {
+      if ((n = read(fileno(_stream.control.termin), &c, 1)) <= 0) {
 	break;
       }
 

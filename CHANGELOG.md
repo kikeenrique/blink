@@ -1,3 +1,61 @@
+# Version 5.028.1
+	- Fixed Cmd+v shortcut
+	- HostKey fingerprint as base64 encoding
+	- Smoothing the HUD on resize or SplitView
+	- Empty default user configuration bugs.
+	- Zoom shortcuts changed.
+	- Solarized theme fixes.
+	
+# Version 4.024.2
+	- AirTerminals! Put a terminal on your remote AirPlay screen :)
+	- Blink shortcuts. Use your external keyboard to move, create, or remove terminals. Configure the trigger too! View settings > Keyboard > Shortcuts for more info.
+	- Want to use SmartKeys when an external keyboard is connected? Now you can switch them on and off from configuration.
+	- View geometry of the screen from the overlay with each resize.
+	- Switch cursor blinking on/off from Appearance settings.
+
+	- Fixed TouchID issues when returning to the app.
+	- Fixed cursor blink sequence so that it always starts as ON.
+	- Fixed Host Port not resetting properly.
+	- Fixed overlay getting covered in landscape mode.
+
+	- Smoother experience thanks to cleanups and improvements.
+
+# Version 3.021.2
+	- iCloud Hosts sync. Synchronize hosts between devices. If a Host already has been synced, it provides conflict resolution. No critical data like passwords is saved.
+	- Auto Lock. If enabled, when you lock/unlock your device, Blink will also be locked. Passcode and TouchID will be required to unlock the app.
+	- Added ARMv7 support. Support for 32 bit devices like iPad 2, 3, iPhone 5, etc... We will publish depending on how well it performs!
+	- Added IPv6 support for hosts.
+	- Share Public Encryption Keys. You can now share the public key from the Keys section to other apps, like Mail.
+
+	- Updated Fira Code font to v1.204.
+	- Improved error checking on Themes and Font uploads. Auto correct if the GH URL is not a raw one.
+
+	- Fixed bug with password not getting saved on host creation.
+	- Fixed crash when hitting arrows with landscape keyboard on Plus devices.
+	- Rolled back LC_CTYPE enforcement on server.
+
+# Version 2.109 / 3.0
+	- NEW Autorepeat for normal keys on external keyboard. Vim users rejoice!
+	- NEW Default User for connections based on device.
+	- NEW Comments for Public Keys.
+
+	- Security updates to libraries.
+
+	- Fixed critical bugs affecting ssh connections.
+
+# Version 1.031
+	- NEW On-screen keyboard with more space for modifiers, FKeys and Cursor keys. Redesigned for more space on the modifiers, and with a central scrollable area that handles more keys. Activate the Alternate keys by taping on the Alt key. And now tap on a modifier to activate it as a normal button, or make a long press to chain different combinations.
+	- NEW Add your own Fonts & Themes! More info on (https://github.com/blinksh/fonts) and (https://github.com/blinksh/themes)
+	- NEW Multistep authentication. Servers with google authenticator or similar will now connect without problems :)
+	- NEW Fira Code font with ligatures included.
+
+	- Added -l parameter to ssh for Hosts.
+	- Improved message on how use hosts after adding them.
+	- Fixed on-screen arrows.
+	- Fixed F0 as F10 on external keyboard.
+	- Fixed keys selection problem on settings
+	- Fixed ssh-copy-id issue when accessing the host for the first time
+
 # Version 1.019
 	- Simplified build process.
 	- New README and BUILD instructions

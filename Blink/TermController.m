@@ -73,7 +73,8 @@ static NSDictionary *bkModifierMaps = nil;
 - (void)loadView
 {
   [super loadView];
-  _terminal = [[TerminalView alloc] initWithFrame:self.view.frame];
+
+  _terminal = [[TermView alloc] initWithFrame:self.view.frame];
   _terminal.delegate = self;
 
   self.view = _terminal;
@@ -84,16 +85,21 @@ static NSDictionary *bkModifierMaps = nil;
 
 - (void)configureTerminal
 {
+  [_terminal assignSequence:TermViewAutoRepeateSeq toModifier:0];
+
   for (NSString *key in [BKDefaults keyboardKeyList]) {
     NSString *sequence = [BKDefaults keyboardMapping][key];
     [self assignSequence:sequence toModifier:[bkModifierMaps[key] integerValue]];
   }
+  
   if ([BKDefaults isShiftAsEsc]) {
     [_terminal assignKey:UIKeyInputEscape toModifier:UIKeyModifierShift];
   }
+
   if ([BKDefaults isCapsAsEsc]) {
     [_terminal assignKey:UIKeyInputEscape toModifier:UIKeyModifierAlphaShift];
   }
+
   for (NSString *func in [BKDefaults keyboardFuncTriggers].allKeys) {
     NSArray *triggers = [BKDefaults keyboardFuncTriggers][func];
     [self assignFunction:func toTriggers:triggers];
@@ -133,38 +139,41 @@ static NSDictionary *bkModifierMaps = nil;
   // The other thing is that I can actually embed the info in the dictionary, and just redo here, instead of multiple events.
   // (But in the end those would have to be separate strings anyway, so it is pretty much the same).
   // And that was the thing, here we were mapping Defaults -> TC -> TV, even in the functions, and that doesn't make any sense anymore.
-  [[NSNotificationCenter defaultCenter] addObserver:self
-                                           selector:@selector(keyboardModifierChanged:)
-                                               name:BKKeyboardModifierChanged
-                                             object:nil];
+  
+  NSNotificationCenter *defaultCenter = [NSNotificationCenter defaultCenter];
 
-  [[NSNotificationCenter defaultCenter] addObserver:self
-                                           selector:@selector(keyboardCapsAsEscChanged:)
-                                               name:BKKeyboardCapsAsEscChanged
-                                             object:nil];
+  [defaultCenter addObserver:self
+                    selector:@selector(keyboardModifierChanged:)
+                        name:BKKeyboardModifierChanged
+                      object:nil];
 
-  [[NSNotificationCenter defaultCenter] addObserver:self
-                                           selector:@selector(keyboardShiftAsEscChanged:)
-                                               name:BKKeyboardShiftAsEscChanged
-                                             object:nil];
+  [defaultCenter addObserver:self
+                    selector:@selector(keyboardCapsAsEscChanged:)
+                        name:BKKeyboardCapsAsEscChanged
+                      object:nil];
 
-  [[NSNotificationCenter defaultCenter] addObserver:self
-                                           selector:@selector(keyboardFuncTriggerChanged:)
-                                               name:BKKeyboardFuncTriggerChanged
-                                             object:nil];
+  [defaultCenter addObserver:self
+                    selector:@selector(keyboardShiftAsEscChanged:)
+                        name:BKKeyboardShiftAsEscChanged
+                      object:nil];
 
-    [[NSNotificationCenter defaultCenter] addObserver:self
-					     selector:@selector(appearanceChanged:)
-                                               name:BKAppearanceChanged
-                                             object:nil];
+  [defaultCenter addObserver:self
+                    selector:@selector(keyboardFuncTriggerChanged:)
+                        name:BKKeyboardFuncTriggerChanged
+                      object:nil];
 
+  [defaultCenter addObserver:self
+                    selector:@selector(appearanceChanged:)
+                        name:BKAppearanceChanged
+                      object:nil];
 }
 
-- (void) viewDidAppear:(BOOL)animated
+- (void)viewDidAppear:(BOOL)animated
 {
   if (_appearanceChanged) {
     [self setAppearanceFromSettings];
   }
+  [super viewDidAppear:animated];
 }
 
 - (void)setAppearanceFromSettings
@@ -177,13 +186,21 @@ static NSDictionary *bkModifierMaps = nil;
 
   BKFont *font = [BKFont withName:[BKDefaults selectedFontName]];
   if (font) {
-    [_terminal loadTerminalFont:font.name fromCSS:font.fullPath];
+    if (font.isCustom) {
+      [_terminal loadTerminalFont:font.name cssFontContent:font.content];
+    } else {
+      [_terminal loadTerminalFont:font.name fromCSS:font.fullPath];
+    }
   }
 
   if (!_disableFontSizeSelection) {
     NSNumber *fontSize = [BKDefaults selectedFontSize];
     [_terminal setFontSize:fontSize];
   }
+  
+  [_terminal setCursorBlink:[BKDefaults isCursorBlink]];
+
+  [_terminal reset];
 }
 
 - (void)terminate
@@ -241,6 +258,9 @@ static NSDictionary *bkModifierMaps = nil;
 {
   _termsz->ws_row = rows.shortValue;
   _termsz->ws_col = cols.shortValue;
+  if ([self.delegate respondsToSelector:@selector(terminalDidResize:)]) {
+    [self.delegate terminalDidResize:self];
+  }
   [_session sigwinch];
 }
 
@@ -256,12 +276,6 @@ static NSDictionary *bkModifierMaps = nil;
 {
   [self setAppearanceFromSettings];
   [self startSession];
-}
-
-- (void)didReceiveMemoryWarning
-{
-  [super didReceiveMemoryWarning];
-  // Dispose of any resources that can be recreated.
 }
 
 - (void)dealloc
@@ -326,7 +340,6 @@ static NSDictionary *bkModifierMaps = nil;
 
 - (void)appearanceChanged:(NSNotification *)notification
 {
-//  NSDictionary *action = [notification userInfo];
   if (self.isViewLoaded && self.view.window) {
     [self setAppearanceFromSettings];
   } else {

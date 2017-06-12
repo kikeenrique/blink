@@ -30,6 +30,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
 
 @interface SshRsa : NSObject
@@ -38,11 +39,11 @@
 - (SshRsa *)initFromPrivateKey:(NSString *)privateKey passphrase:(NSString *)passphrase;
 - (NSString *)privateKey;
 - (NSString *)privateKeyWithPassphrase:(NSString *)passphrase;
-- (NSString *)publicKey;
+- (NSString *)publicKeyWithComment:(NSString*)comment;
 
 @end
 
-@interface BKPubKey : NSObject <NSCoding>
+@interface BKPubKey : NSObject <NSCoding, UIActivityItemSource>
 
 @property NSString *ID;
 @property (readonly) NSString *privateKey;

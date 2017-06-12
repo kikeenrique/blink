@@ -1,10 +1,10 @@
-# Blink Mobile Shell for iOS
-Do Blink! Blink is the first professional, desktop-grade terminal for iOS that leverages the support of Mosh and SSH. Thus, we can unequivocally guarantee stable connections, lightning-fast speeds, and full configurations. It can and should be your all-day-long tool. [Check it out!](www.blink.sh)
+# Blink Shell for iOS
+Do Blink! [Blink](http://blink.sh) is the first professional, desktop-grade terminal for iOS that leverages the support of Mosh and SSH. Thus, we can unequivocally guarantee stable connections, lightning-fast speeds, and full configurations. It can and should be your all-day-long tool.
 
 We did not create another terminal to fix your website on the go. Blink was built as a professional grade product from the onset. We started by analyzing what the must-haves were and we ended up grounding Blink on these three concepts:
 - Fast rendering: dmesg in your Unix server should be instantaneous. We can't wait even a second to render. We didn't need to reinvent the wheel to make this happen. We simply used Chromium's HTerm to ensure that rendering is perfect and fast, even with those special, tricky encodings.
-- Always on: Mosh transcends SSH's variability. Mosh overcomes the unstable and intermittent connectivity that we all associate with mobile connections. You can check your Safari without fear of having to restart the SSH connection. You can flawlessly jump from home, to the train, and then the office thanks to Mosh. Blink is rock-solid connected all the way. Mosh is readily available and can be easily installed on your server. Go to https://mosh.mit. 
-- Fully configurable: Blink embraces Bluetooth-coupled keyboards with gusto. But there's more, because we want more. Some like Caps as Esc on Vim, others Caps as Ctrl on Emacs. Blink champions them all. During your always-on sessions, you're in your zone. As well, custom themes and fonts are on the way.
+- Always on: Mosh transcends SSH's variability. Mosh overcomes the unstable and intermittent connectivity that we all associate with mobile connections. You can check your Safari without fear of having to restart the SSH connection. You can flawlessly jump from home, to the train, and then the office thanks to Mosh. Blink is rock-solid connected all the way. Mosh is readily available and can be easily installed on your server. Go to https://mosh.org. 
+- Fully configurable: Blink embraces Bluetooth-coupled keyboards with gusto. Some like Caps as Esc on Vim, others Caps as Ctrl on Emacs. Blink champions them all. But there's more, because we want more. You can also add your own custom themes and fonts to Blink. During your always-on sessions, you're in your zone.
 
 But, Blink is much more. Please read on:
 - You should command your terminal, not navigate it. Blink will jump you right into a friendly shell and it'll be clear to you how to roll.
@@ -28,16 +28,11 @@ We can't wait to receive your valuable feedback. Enjoy!
 We made a ton easier to build and install Blink yourself on your iOS devices through XCode. We provide a precompiled package with all the libraries for the master branch. Just extract this package in your Framework folder and build Blink.
 
 ```bash
-git clone git@github.com:blinksh/blink.git
-cd blink
-git submodule init
-git submodule update
-cd Frameworks
-curl -OL https://github.com/blinksh/blink/releases/download/v1.019/Blink-Frameworks.tar.gz
-tar -zxf Blink-Frameworks.tar.gz
+git clone --recursive git@github.com:blinksh/blink.git && \
+cd blink && ./get_frameworks.sh
 ```
 
-Although this is the quickest method to get you up and running, if you would like to compile all libraries and resources yourself, refer to [BUILD](https://github.com/blinksh/blink/blob/master/BUILD). Please let us know if you find any issues. Blink is a complex project with multiple low level dependencies and we are still looking for ways to simplify and autoate the full compilation process.
+Although this is the quickest method to get you up and running, if you would like to compile all libraries and resources yourself, refer to [BUILD](https://github.com/blinksh/blink/blob/master/BUILD). Please let us know if you find any issues. Blink is a complex project with multiple low level dependencies and we are still looking for ways to simplify and automate the full compilation process.
 
 # Using Blink
 Our UI is very straightforward and optimizes the experience on touch devices for the really important part, the terminal. You will jump right into a very simple shell, so you will know what to do. Here are a few more tricks:
@@ -52,14 +47,24 @@ Our UI is very straightforward and optimizes the experience on touch devices for
 - Ctrl and Alt modifiers at the SmartKeys bar allow for continuous presses, like in a real keyboard.
 
 # Changelog
-## Version 1.019
-	- Simplified build process.
-	- New README and BUILD instructions
+# Version 3.021.2
+	- iCloud Hosts sync. Synchronize hosts between devices. If a Host already has been synced, it provides conflict resolution. No critical data like passwords is saved.
+	- Auto Lock. If enabled, when you lock/unlock your device, Blink will also be locked. Passcode and TouchID will be required to unlock the app.
+	- Added ARMv7 support. Support for 32 bit devices like iPad 2, 3, iPhone 5, etc... We will publish depending on how well it performs!
+	- Added IPv6 support for hosts.
+	- Share Public Encryption Keys. You can now share the public key from the Keys section to other apps, like Mail.
+
+	- Updated Fira Code font to v1.204.
+	- Improved error checking on Themes and Font uploads. Auto correct if the GH URL is not a raw one.
+
+	- Fixed bug with password not getting saved on host creation
+	- Fixed crash when hitting arrows with landscape keyboard on Plus devices.
+	- Rolled back LC_CTYPE enforcement on server.
 
 [View all changes](CHANGELOG.md)
 
 # Attributions
-- [Mosh](https://mosh.mit.edu) was written by Keith Winstein, along with Anders Kaseorg, Quentin Smith, Richard Tibbetts, Keegan McAllister, and John Hood.
+- [Mosh](https://mosh.org) was written by Keith Winstein, along with Anders Kaseorg, Quentin Smith, Richard Tibbetts, Keegan McAllister, and John Hood.
 - This product includes software developed by the OpenSSL Project
 for use in the OpenSSL Toolkit. (http://www.openssl.org/).
 - [Libssh2](https://www.libssh2.org)
