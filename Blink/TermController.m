@@ -39,6 +39,9 @@
 #import "Session.h"
 #import "fterm.h"
 
+NSString * const BKUserActivityTypeCommandLine = @"com.blink.cmdline";
+NSString * const BKUserActivityCommandLineKey = @"com.blink.cmdline.key";
+
 static NSDictionary *bkModifierMaps = nil;
 
 @interface TermController () <TerminalDelegate, SessionDelegate>
@@ -50,6 +53,7 @@ static NSDictionary *bkModifierMaps = nil;
   BOOL _viewIsLocked;
   BOOL _appearanceChanged;
   BOOL _disableFontSizeSelection;
+  NSDictionary *_activityUserInfo;
 }
 
 + (void)initialize
@@ -85,7 +89,11 @@ static NSDictionary *bkModifierMaps = nil;
 
 - (void)configureTerminal
 {
-  [_terminal assignSequence:TermViewAutoRepeateSeq toModifier:0];
+  [_terminal resetDefaultControlKeys];
+  
+  if ([BKDefaults autoRepeatKeys]) {
+    [_terminal assignSequence:TermViewAutoRepeateSeq toModifier:0];
+  }
 
   for (NSString *key in [BKDefaults keyboardKeyList]) {
     NSString *sequence = [BKDefaults keyboardMapping][key];
@@ -143,22 +151,12 @@ static NSDictionary *bkModifierMaps = nil;
   NSNotificationCenter *defaultCenter = [NSNotificationCenter defaultCenter];
 
   [defaultCenter addObserver:self
-                    selector:@selector(keyboardModifierChanged:)
-                        name:BKKeyboardModifierChanged
+                    selector:@selector(keyboardConfigChanged:)
+                        name:BKKeyboardConfigChanged
                       object:nil];
 
   [defaultCenter addObserver:self
-                    selector:@selector(keyboardCapsAsEscChanged:)
-                        name:BKKeyboardCapsAsEscChanged
-                      object:nil];
-
-  [defaultCenter addObserver:self
-                    selector:@selector(keyboardShiftAsEscChanged:)
-                        name:BKKeyboardShiftAsEscChanged
-                      object:nil];
-
-  [defaultCenter addObserver:self
-                    selector:@selector(keyboardFuncTriggerChanged:)
+                    selector:@selector(keyboardConfigChanged:)
                         name:BKKeyboardFuncTriggerChanged
                       object:nil];
 
@@ -174,6 +172,30 @@ static NSDictionary *bkModifierMaps = nil;
     [self setAppearanceFromSettings];
   }
   [super viewDidAppear:animated];
+  [self.userActivity becomeCurrent];
+}
+
+- (void)indexCommand:(NSString *)cmdLine {
+  
+  NSUserActivity * activity = [[NSUserActivity alloc] initWithActivityType:BKUserActivityTypeCommandLine];
+  activity.eligibleForPublicIndexing = NO;
+  activity.eligibleForSearch = YES;
+  activity.eligibleForHandoff = YES;
+  
+  [activity setTitle:[NSString stringWithFormat:@"run: %@ ", cmdLine]];
+  
+  _activityUserInfo = @{BKUserActivityCommandLineKey: cmdLine ?: @"help"};
+  activity.userInfo = _activityUserInfo;
+  
+  self.userActivity = activity;
+  [self.userActivity becomeCurrent];
+}
+
+- (void)updateUserActivityState:(NSUserActivity *)activity
+{
+  [activity addUserInfoEntriesFromDictionary:_activityUserInfo];
+  activity.keywords = [NSSet setWithArray:@[@"blink", @"shell", @"mosh", @"ssh", @"terminal", @"remote"]];
+  [activity setRequiredUserInfoKeys:[NSSet setWithArray:_activityUserInfo.allKeys]];
 }
 
 - (void)setAppearanceFromSettings
@@ -242,6 +264,16 @@ static NSDictionary *bkModifierMaps = nil;
   _session = [[MCPSession alloc] initWithStream:stream];
   _session.delegate = self;
   [_session executeWithArgs:@""];
+  
+  
+  // TODO: find a way to handle this in execute with args
+  if ([self.userActivity.activityType isEqualToString: BKUserActivityTypeCommandLine]) {
+    NSString *cmdLine = [self.userActivity.userInfo objectForKey:BKUserActivityCommandLineKey];
+    if (cmdLine) {
+      // TODO: investigate lost first char on iPad
+      [self write:[NSString stringWithFormat:@" %@\n", cmdLine]];
+    }
+  }
 }
 
 - (void)setRawMode:(BOOL)raw
@@ -296,6 +328,7 @@ static NSDictionary *bkModifierMaps = nil;
     free(_termsz);
     _termsz = NULL;
   }
+  [self.userActivity resignCurrent];
 }
 
 #pragma mark SessionDelegate
@@ -307,35 +340,9 @@ static NSDictionary *bkModifierMaps = nil;
 
 #pragma mark Notifications
 
-- (void)keyboardModifierChanged:(NSNotification *)notification
+- (void)keyboardConfigChanged:(NSNotification *)notification
 {
-  // Map the sequence to a function in destination
-  NSDictionary *action = [notification userInfo];
-  [self assignSequence:action[@"sequence"] toModifier:[bkModifierMaps[action[@"modifier"]] integerValue]];
-}
-
-- (void)keyboardCapsAsEscChanged:(NSNotification *)notification
-{
-  if ([BKDefaults isCapsAsEsc]) {
-    [_terminal assignKey:UIKeyInputEscape toModifier:UIKeyModifierAlphaShift];
-  } else {
-    [_terminal assignKey:nil toModifier:UIKeyModifierAlphaShift];
-  }
-}
-
-- (void)keyboardShiftAsEscChanged:(NSNotification *)notification
-{
-  if ([BKDefaults isShiftAsEsc]) {
-    [_terminal assignKey:UIKeyInputEscape toModifier:UIKeyModifierShift];
-  } else {
-    [_terminal assignKey:nil toModifier:UIKeyModifierShift];
-  }
-}
-
-- (void)keyboardFuncTriggerChanged:(NSNotification *)notification
-{
-  NSDictionary *action = [notification userInfo];
-  [self assignFunction:action[@"func"] toTriggers:action[@"trigger"]];
+  [self configureTerminal];
 }
 
 - (void)appearanceChanged:(NSNotification *)notification
